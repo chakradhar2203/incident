@@ -1,0 +1,14 @@
+# RCA Assistant — Git Ignore
+.env
+firebase-service-account.json
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.log
+.DS_Store
+

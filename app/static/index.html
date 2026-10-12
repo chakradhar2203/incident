@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RCA Assistant – AI Incident Triage</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">RCA Assistant</div>
+          <div class="brand-sub">AI Incident Triage &amp; Root Cause Analysis</div>
+        </div>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="dashboard">📊 Dashboard</button>
+        <button class="nav-tab" data-tab="analyze">🔍 Analyze</button>
+        <button class="nav-tab" data-tab="servicenow">🔗 ServiceNow</button>
+        <button class="nav-tab" data-tab="knowledge">📚 Knowledge Base</button>
+        <button class="nav-tab" data-tab="copilot">💬 Copilot</button>
+        <button class="nav-tab" data-tab="settings">⚙️ Settings</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <!-- ══════════════ DASHBOARD TAB ══════════════ -->
+    <section id="tab-dashboard" class="tab-section active">
+      <div class="section-header">
+        <h2>Operational Dashboard</h2>
+        <button class="btn btn-sm btn-ghost" onclick="loadDashboard()">↻ Refresh</button>
+      </div>
+
+      <!-- Metric cards -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon">📈</div>
+          <div class="metric-value" id="m-incidents">—</div>
+          <div class="metric-label">Incidents Analyzed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">📚</div>
+          <div class="metric-value" id="m-kb">—</div>
+          <div class="metric-label">Knowledge Cases</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">🎯</div>
+          <div class="metric-value" id="m-avg-conf">—</div>
+          <div class="metric-label">Avg Confidence</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">⭐</div>
+          <div class="metric-value" id="m-high">—</div>
+          <div class="metric-label">High Confidence</div>
+        </div>
+      </div>
+
+      <!-- Status row -->
+      <div class="status-row">
+        <div class="status-card">
+          <div class="status-label">Analysis Mode</div>
+          <span class="badge" id="s-mode">—</span>
+        </div>
+        <div class="status-card">
+          <div class="status-label">Claude API</div>
+          <span class="badge" id="s-claude">—</span>
+        </div>
+        <div class="status-card">
+          <div class="status-label">Firebase KB</div>
+          <span class="badge" id="s-firebase">—</span>
+        </div>
+        <div class="status-card">
+          <div class="status-label">ServiceNow Write-back</div>
+          <span class="badge" id="s-writeback">—</span>
+        </div>
+      </div>
+
+      <!-- Scheduler panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Recurring Incident Scheduler</h3>
+          <div class="btn-group">
+            <button class="btn btn-success btn-sm" onclick="startScheduler()">▶ Start</button>
+            <button class="btn btn-danger btn-sm" onclick="stopScheduler()">⏹ Stop</button>
+          </div>
+        </div>
+        <div class="scheduler-status" id="scheduler-status">
+          <div class="status-row-inline">
+            <span class="dot dot-gray" id="sch-dot"></span>
+            <span id="sch-running">Not running</span>
+          </div>
+          <div class="meta-row" id="sch-meta" style="display:none">
+            <div><span class="meta-label">Last Incident:</span> <span id="sch-last">—</span></div>
+            <div><span class="meta-label">Write-back:</span> <span id="sch-wb">—</span></div>
+            <div><span class="meta-label">Next Run:</span> <span id="sch-next">—</span></div>
+            <div id="sch-error-row" style="display:none"><span class="meta-label text-danger">Error:</span> <span id="sch-error" class="text-danger">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent incidents table -->
+      <div class="panel">
+        <div class="panel-header"><h3>Recent Incident Analyses</h3></div>
+        <div class="table-wrapper">
+          <table id="incidents-table">
+            <thead>
+              <tr>
+                <th>Incident</th><th>Short Cause</th><th>Confidence</th>
+                <th>Team</th><th>Mode</th><th>Time</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="incidents-tbody">
+              <tr><td colspan="7" class="empty-cell">No incidents analyzed yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ ANALYZE TAB ══════════════ -->
+    <section id="tab-analyze" class="tab-section">
+      <div class="section-header">
+        <h2>Analyze Incident</h2>
+        <button class="btn btn-sm btn-primary" onclick="generateAndAnalyze()">⚡ Generate &amp; Analyze Demo</button>
+      </div>
+
+      <div class="two-col">
+        <!-- Form -->
+        <div class="panel">
+          <div class="panel-header"><h3>Incident Details</h3></div>
+          <form id="analyze-form" onsubmit="submitAnalysis(event)">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Incident Number *</label>
+                <input type="text" id="f-number" placeholder="INC0001234" required />
+              </div>
+              <div class="form-group">
+                <label>Category</label>
+                <select id="f-category">
+                  <option value="software">Software</option>
+                  <option value="hardware">Hardware</option>
+                  <option value="network">Network</option>
+                  <option value="database">Database</option>
+                  <option value="memory">Memory</option>
+                  <option value="storage">Storage</option>
+                  <option value="authentication">Authentication</option>
+                  <option value="deployment">Deployment</option>
+                  <option value="performance">Performance</option>
+                  <option value="configuration">Configuration</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Priority</label>
+                <select id="f-priority">
+                  <option value="1 - Critical">1 – Critical</option>
+                  <option value="2 - High">2 – High</option>
+                  <option value="3 - Moderate" selected>3 – Moderate</option>
+                  <option value="4 - Low">4 – Low</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Application / Service</label>
+                <input type="text" id="f-app" placeholder="payment-api" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Short Description *</label>
+              <input type="text" id="f-short-desc" placeholder="Brief summary of the incident" required />
+            </div>
+            <div class="form-group">
+              <label>Detailed Description</label>
+              <textarea id="f-description" rows="4" placeholder="Full incident description, symptoms, impact…"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Application / Infrastructure Logs</label>
+              <textarea id="f-logs" rows="6" placeholder="Paste relevant log excerpts here…" class="mono"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Recent Changes</label>
+              <textarea id="f-changes" rows="3" placeholder="Recent deployments, config changes, patches…"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="analyze-btn">🔍 Analyze Incident</button>
+              <button type="button" class="btn btn-ghost" onclick="clearForm()">Clear</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Result panel -->
+        <div id="result-panel" class="panel result-panel" style="display:none">
+          <div class="panel-header">
+            <h3>RCA Result — <span id="r-incident-number"></span></h3>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-ghost" onclick="copyResult()">📋 Copy</button>
+              <button class="btn btn-sm btn-warning" id="r-wb-btn" onclick="writebackCurrent()" style="display:none">📤 Write to SN</button>
+            </div>
+          </div>
+
+          <!-- Confidence banner -->
+          <div class="confidence-banner" id="r-conf-banner">
+            <div class="conf-score" id="r-conf-score"></div>
+            <div>
+              <div class="conf-label" id="r-conf-label"></div>
+              <div class="conf-mode" id="r-conf-mode"></div>
+            </div>
+          </div>
+
+          <!-- Root cause -->
+          <div class="result-section">
+            <div class="result-label">🔍 Probable Root Cause</div>
+            <div class="result-value" id="r-root-cause"></div>
+          </div>
+
+          <!-- Recommended team -->
+          <div class="result-section">
+            <div class="result-label">👥 Recommended Team</div>
+            <div class="result-value"><span class="badge badge-blue" id="r-team"></span></div>
+          </div>
+
+          <!-- Evidence -->
+          <div class="result-section">
+            <div class="result-label">📋 Evidence Detected</div>
+            <ul class="result-list" id="r-evidence"></ul>
+          </div>
+
+          <!-- Actions -->
+          <div class="result-section">
+            <div class="result-label">✅ Recommended Actions</div>
+            <ol class="result-list" id="r-actions"></ol>
+          </div>
+
+          <!-- Commands -->
+          <div class="result-section" id="r-cmd-section">
+            <div class="result-label">🔧 Diagnostic Commands</div>
+            <div id="r-commands"></div>
+          </div>
+
+          <!-- Similar cases -->
+          <div class="result-section" id="r-sim-section">
+            <div class="result-label">🕰️ Similar Historical Cases</div>
+            <div id="r-similar"></div>
+          </div>
+
+          <!-- Feedback form -->
+          <div class="feedback-section">
+            <div class="result-label">📝 Submit Verified Resolution</div>
+            <div class="form-group">
+              <label>Verified Root Cause</label>
+              <input type="text" id="fb-root-cause" placeholder="Confirmed root cause after investigation" />
+            </div>
+            <div class="form-group">
+              <label>Resolution Notes</label>
+              <textarea id="fb-resolution" rows="3" placeholder="What was done to resolve this incident?"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Final Assignment Group</label>
+              <input type="text" id="fb-team" placeholder="e.g. Application Support" />
+            </div>
+            <button class="btn btn-success btn-sm" onclick="submitFeedback()">💾 Save to Knowledge Base</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading state -->
+      <div id="analyze-loading" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <div class="loading-text">Analyzing incident…</div>
+      </div>
+    </section>
+
+    <!-- ══════════════ SERVICENOW TAB ══════════════ -->
+    <section id="tab-servicenow" class="tab-section">
+      <div class="section-header">
+        <h2>ServiceNow Integration</h2>
+        <button class="btn btn-sm btn-primary" onclick="testSnowConnection()">🔌 Test Connection</button>
+      </div>
+
+      <div id="snow-conn-status" class="alert" style="display:none"></div>
+
+      <div class="two-col">
+        <!-- Fetch by number -->
+        <div class="panel">
+          <div class="panel-header"><h3>Fetch &amp; Analyze Incident</h3></div>
+          <p class="panel-desc">Enter a ServiceNow incident number to fetch it and run an RCA.</p>
+          <div class="form-group">
+            <label>Incident Number</label>
+            <input type="text" id="snow-incident-num" placeholder="INC0001234" />
+          </div>
+          <button class="btn btn-primary" onclick="fetchAndAnalyze()">🔍 Fetch &amp; Analyze</button>
+        </div>
+
+        <!-- Write-back -->
+        <div class="panel">
+          <div class="panel-header"><h3>Manual Write-back</h3></div>
+          <p class="panel-desc">Push a previously analyzed RCA to the ServiceNow incident work notes.</p>
+          <div class="form-group">
+            <label>Incident Number (must be already analyzed)</label>
+            <input type="text" id="snow-wb-num" placeholder="INC0001234" />
+          </div>
+          <button class="btn btn-warning" onclick="manualWriteback()">📤 Write RCA to Incident</button>
+        </div>
+      </div>
+
+      <!-- SN result display -->
+      <div id="snow-result" class="panel" style="display:none">
+        <div class="panel-header"><h3>Result</h3></div>
+        <pre id="snow-result-pre" class="mono code-block"></pre>
+      </div>
+    </section>
+
+    <!-- ══════════════ KNOWLEDGE BASE TAB ══════════════ -->
+    <section id="tab-knowledge" class="tab-section">
+      <div class="section-header">
+        <h2>Knowledge Base</h2>
+        <button class="btn btn-sm btn-ghost" onclick="loadKnowledge()">↻ Refresh</button>
+      </div>
+      <div id="kb-stats" class="status-row" style="margin-bottom:1.5rem"></div>
+      <div class="panel">
+        <div class="table-wrapper">
+          <table id="kb-table">
+            <thead>
+              <tr>
+                <th>Case ID</th><th>Category</th><th>Description</th>
+                <th>Root Cause</th><th>Team</th><th>Verified</th>
+              </tr>
+            </thead>
+            <tbody id="kb-tbody">
+              <tr><td colspan="6" class="empty-cell">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ COPILOT TAB ══════════════ -->
+    <section id="tab-copilot" class="tab-section">
+      <div class="section-header">
+        <h2>Incident Copilot</h2>
+        <span class="badge badge-blue">Grounded Q&amp;A</span>
+      </div>
+      <div class="panel copilot-panel">
+        <div class="form-group">
+          <label>Incident Number (must be already analyzed)</label>
+          <input type="text" id="cop-incident" placeholder="INC0001234" />
+        </div>
+        <div class="chat-window" id="chat-window">
+          <div class="chat-welcome">
+            <div class="chat-icon">💬</div>
+            <div>Ask questions about an analyzed incident. Answers are grounded in the incident evidence and historical cases.</div>
+          </div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="cop-question" placeholder="e.g. What is the root cause? Who should handle this?" 
+                 onkeydown="if(event.key==='Enter') askCopilot()" />
+          <button class="btn btn-primary" onclick="askCopilot()">Ask →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ SETTINGS TAB ══════════════ -->
+    <section id="tab-settings" class="tab-section">
+      <div class="section-header">
+        <h2>Configuration</h2>
+        <span class="badge badge-orange">Stored in memory only</span>
+      </div>
+      <div class="alert alert-warning">
+        ⚠️ Configuration values are stored in process memory only and cleared when the application restarts.
+        Never commit credentials to source control. Use <code>.env</code> for persistent configuration.
+      </div>
+
+      <div class="settings-grid">
+        <!-- ServiceNow -->
+        <div class="panel">
+          <div class="panel-header"><h3>ServiceNow</h3></div>
+          <div class="form-group">
+            <label>Instance URL</label>
+            <input type="url" id="cfg-sn-url" placeholder="https://your-instance.service-now.com" />
+          </div>
+          <div class="form-group">
+            <label>Integration Username</label>
+            <input type="text" id="cfg-sn-user" placeholder="rca_integration_user" />
+          </div>
+          <div class="form-group">
+            <label>Password / Access Token</label>
+            <input type="password" id="cfg-sn-pass" placeholder="••••••••" />
+          </div>
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="cfg-writeback" />
+              Enable ServiceNow Write-back
+            </label>
+            <small>⚠️ Test in a developer sandbox first.</small>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveSnowConfig()">Save ServiceNow Config</button>
+          <button class="btn btn-ghost btn-sm" style="margin-left:0.5rem" onclick="testSnowAndReport()">Test Connection</button>
+          <div id="cfg-sn-status" class="inline-status"></div>
+        </div>
+
+        <!-- Claude AI -->
+        <div class="panel">
+          <div class="panel-header"><h3>Claude AI (Anthropic)</h3></div>
+          <div class="form-group">
+            <label>Claude API Key</label>
+            <input type="password" id="cfg-claude-key" placeholder="sk-ant-api…" />
+          </div>
+          <div class="form-group">
+            <label>Model</label>
+            <select id="cfg-claude-model">
+              <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
+              <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
+              <option value="claude-3-opus-20240229">claude-3-opus-20240229</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Analysis Mode</label>
+            <select id="cfg-mode">
+              <option value="local">Local (No AI required)</option>
+              <option value="ai">AI-Assisted (Claude)</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveClaudeConfig()">Save Claude Config</button>
+          <div id="cfg-claude-status" class="inline-status"></div>
+        </div>
+
+        <!-- Firebase -->
+        <div class="panel">
+          <div class="panel-header"><h3>Firebase Knowledge Base</h3></div>
+          <div class="form-group">
+            <label>Service Account JSON Path</label>
+            <input type="text" id="cfg-fb-path" placeholder="firebase-service-account.json" />
+          </div>
+          <div class="form-group">
+            <label>Project ID</label>
+            <input type="text" id="cfg-fb-project" placeholder="your-firebase-project-id" />
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveFirebaseConfig()">Save Firebase Config</button>
+          <div id="cfg-fb-status" class="inline-status"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
