@@ -94,22 +94,19 @@ To automatically store resolved incidents in Firebase Firestore without requirin
 
 ---
 
-## Step 4: Connecting Localhost to ServiceNow PDI via ngrok
+## Step 4: Connecting ServiceNow PDI to RCA Assistant
 
-A ServiceNow PDI runs in the cloud and cannot reach `http://localhost:8000` directly. Expose your local RCA Assistant with **ngrok**:
+Your RCA Assistant is deployed live on Render at:
+**`https://rca-assistant.onrender.com`**
 
-```bash
-# In terminal:
-ngrok http 8000
-
-```
-
-Copy the generated URL (e.g., `https://abc-123.ngrok-free.app`) and replace `http://localhost:8000` inside:
+The scripts in this directory already have `RCA_ASSISTANT_URL` pre-configured to `https://rca-assistant.onrender.com`:
 1. `ui_action_run_rca.js`
 2. `ui_action_accept_rca.js`
 3. `ui_action_reject_rca.js`
 4. `ui_action_publish_to_kb.js`
 5. `business_rule_publish_kb_on_resolve.js`
+
+No tunnels or ngrok required! Your ServiceNow PDI can communicate directly with this live HTTPS endpoint.
 
 ---
 

@@ -19,7 +19,7 @@
 
 (function executeAction(/*GlideRecord*/ current, /*GlideRecord*/ previous) {
 
-  var RCA_ASSISTANT_URL = 'http://localhost:8000';  // ← Replace with your URL
+  var RCA_ASSISTANT_URL = 'https://rca-assistant.onrender.com';  // Live Render URL
 
   // ── Build payload from current incident ───────────────────────────────────
   var payload = {

@@ -117,22 +117,37 @@ class FirebaseKnowledgeBase:
         self._in_memory: List[Dict[str, Any]] = list(SEED_CASES)
         self._firebase_ready = False
 
-        if service_account_path and os.path.exists(service_account_path):
-            self._init_firebase(service_account_path, project_id)
+        sa_json_env = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+        if sa_json_env:
+            try:
+                cert_data = json.loads(sa_json_env)
+                self._init_firebase(cert_data, project_id)
+                return
+            except Exception as e:
+                logger.warning("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON: %s", e)
+
+        # Check standard and Render secret file paths
+        candidate_paths = [
+            service_account_path,
+            "/etc/secrets/firebase-service-account.json",
+            "firebase-service-account.json",
+        ]
+        chosen_path = next((p for p in candidate_paths if p and os.path.exists(p)), None)
+
+        if chosen_path:
+            self._init_firebase(chosen_path, project_id)
         else:
             logger.warning(
-                "Firebase service account not found at '%s'. "
-                "Using in-memory knowledge base.",
-                service_account_path,
+                "Firebase service account not found. Using in-memory knowledge base."
             )
 
-    def _init_firebase(self, service_account_path: str, project_id: str) -> None:
+    def _init_firebase(self, cred_source: Any, project_id: str) -> None:
         try:
             import firebase_admin
             from firebase_admin import credentials, firestore
 
             if not firebase_admin._apps:
-                cred = credentials.Certificate(service_account_path)
+                cred = credentials.Certificate(cred_source)
                 options: Dict[str, Any] = {}
                 if project_id:
                     options["projectId"] = project_id

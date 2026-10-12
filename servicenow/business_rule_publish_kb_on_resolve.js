@@ -29,7 +29,7 @@
 
 (function executeRule(current, previous /*null when async*/) {
 
-  var RCA_ASSISTANT_URL = 'http://localhost:8000';  // ← Replace with your URL / ngrok tunnel
+  var RCA_ASSISTANT_URL = 'https://rca-assistant.onrender.com';  // Live Render URL
 
   var incidentNumber = current.number.toString();
   var closeNotes = current.close_notes ? current.close_notes.toString() : '';
