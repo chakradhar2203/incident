@@ -127,6 +127,16 @@ async function stopScheduler() {
 
 // ── Analyze tab ───────────────────────────────────────────────────────────────
 const TEST_PRESETS = {
+  vpn_timeout: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'network',
+    priority: '2 - High',
+    app: 'Corporate VPN Service',
+    short_desc: 'Users unable to connect to corporate VPN due to network connectivity issues',
+    desc: 'Multiple users reported inability to establish VPN connections to the corporate network. Intermittent connectivity between VPN gateway servers and internet service providers. Remote users unable to access internal applications.',
+    logs: 'VPN connection timeout\nGateway unreachable\nNetwork packet loss detected: 85%\nFailed to establish secure tunnel\nError Code: VPN-504 Gateway Timeout',
+    changes: 'Upstream ISP fiber maintenance reported in local region.'
+  },
   disk_full: {
     number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
     category: 'storage',
@@ -211,6 +221,12 @@ function loadTestPreset(type) {
   setVal('f-logs', p.logs);
   setVal('f-changes', p.changes);
   toast(`Loaded scenario: ${p.short_desc.substring(0, 35)}...`, 'info');
+}
+
+function fillRandomDemoData() {
+  const keys = Object.keys(TEST_PRESETS);
+  const randomKey = keys[Math.floor(Math.random() * keys.length)];
+  loadTestPreset(randomKey);
 }
 
 async function submitAnalysis(event) {

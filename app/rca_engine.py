@@ -251,7 +251,7 @@ def find_similar_cases(
             category=c.get("category", ""),
         )
         for score, c in scored[:top_n]
-        if score > 0
+        if score >= 0.30
     ]
 
 
@@ -361,26 +361,32 @@ async def ai_analysis(
 {similar_text}
 
 ## Your Task
-Based on the incident details, logs, evidence signals, and historical cases above, provide a structured RCA.
+Analyze this incident and provide a structured Root Cause Analysis JSON object.
 
 Respond ONLY with a valid JSON object in this exact format:
 {{
-  "probable_root_cause": "Concise 1-3 sentence root cause explanation grounded in the evidence",
-  "confidence_score": 0.75,
+  "probable_root_cause": "Concise 1-3 sentence root cause explanation grounded strictly in the evidence",
+  "confidence_score": 0.72,
   "evidence_used": ["evidence item 1", "evidence item 2"],
   "recommended_team": "Team Name",
   "recommended_actions": ["Action 1", "Action 2", "Action 3"],
   "diagnostic_commands": [
-    {{"command": "kubectl describe pod ...", "description": "Why run this", "requires_approval": false}}
+    {{"command": "traceroute ... or systemctl ...", "description": "Why run this", "requires_approval": false}}
   ]
 }}
 
-Rules:
-- confidence_score must be between 0.0 and 1.0
-- Base your analysis ONLY on the provided evidence, logs, and historical cases
-- If evidence is insufficient, say so honestly and set confidence_score below 0.4
-- Flag any commands that are potentially destructive with requires_approval: true
-- Do not suggest running commands automatically
+CRITICAL GROUNDING RULES:
+1. STRICT GROUNDING: Base your analysis EXCLUSIVELY on the actual incident details and logs provided for incident {incident.incident_number}.
+2. DO NOT borrow pod names, hostnames, service names (e.g., payment-api), change ticket numbers, or failure modes from historical cases if they do not exist in the current incident.
+3. If the incident is about {incident.category} (e.g. Network/VPN), your root cause MUST address {incident.category}, NOT unrelated categories like Java heap OOM or Database pools!
+4. The historical cases are only background references. If they are not relevant to the current symptoms, treat this as a NOVEL incident and diagnose solely from the reported logs and symptoms.
+5. Provide diagnostic commands tailored specifically to the technology stack mentioned (e.g. for Network/VPN use ping, traceroute, ip route, netstat, systemctl, curl, etc.; do NOT suggest kubectl pod commands unless the incident is explicitly running on Kubernetes).
+6. Set confidence_score honestly:
+   - 0.80 - 0.95: ONLY if the logs provide clear, conclusive root cause proof or match a verified pattern.
+   - 0.50 - 0.79: Probable root cause based on symptoms, but requires diagnostic command verification.
+   - 0.20 - 0.49: Insufficient evidence or conflicting signals.
+7. Flag any commands that are potentially destructive with requires_approval: true.
+8. Do not suggest running commands automatically.
 """
 
         client = anthropic.Anthropic(api_key=api_key)

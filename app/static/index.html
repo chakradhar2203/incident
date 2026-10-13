@@ -133,7 +133,7 @@
     <section id="tab-analyze" class="tab-section">
       <div class="section-header">
         <h2>Analyze Incident</h2>
-        <button class="btn btn-sm btn-primary" onclick="generateAndAnalyze()">⚡ Generate &amp; Analyze Demo</button>
+        <button class="btn btn-sm btn-ghost" onclick="fillRandomDemoData()">🎲 Auto-Fill Demo Scenario</button>
       </div>
 
       <div class="two-col">
@@ -151,12 +151,13 @@
               <span style="font-size: 0.75rem; text-transform: none; color: var(--blue);">Click any scenario to populate &amp; post</span>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+              <button type="button" class="preset-chip" onclick="loadTestPreset('vpn_timeout')">🌐 Corporate VPN Outage</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('disk_full')">💾 /var Disk Full</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('db_pool')">🐘 PostgreSQL Pool 503</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('oom_killed')">☕ Java OOMKilled 137</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('ssl_expired')">🔒 Expired SSL Cert</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('sssd_auth')">🛡️ SSSD AD Auth Failure</button>
-              <button type="button" class="preset-chip" onclick="loadTestPreset('dns_failure')">🌐 DNS Unreachable</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('dns_failure')">📡 DNS Unreachable</button>
               <button type="button" class="preset-chip" onclick="loadTestPreset('iis_disk')">🪟 Windows IIS Log Exhaustion</button>
             </div>
           </div>
