@@ -201,8 +201,25 @@ def extract_evidence(incident: IncidentInput) -> Tuple[List[str], str]:
     return evidence, dominant_category
 
 
+_STOP_WORDS = {
+    "this", "that", "with", "have", "been", "from", "were", "they", "their",
+    "when", "after", "issue", "failed", "due", "error", "the", "and", "for",
+    "are", "was", "will", "into", "over", "some", "such", "than", "then",
+    "about", "more", "also", "each",
+}
+
+
+def _tokenize(text: str) -> set[str]:
+    words = re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", text.lower())
+    return set(w for w in words if w not in _STOP_WORDS)
+
+
 def _text_similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    clean_a = re.sub(r"[^\w\s]", " ", a.lower()).strip()
+    clean_b = re.sub(r"[^\w\s]", " ", b.lower()).strip()
+    clean_a = re.sub(r"\s+", " ", clean_a)
+    clean_b = re.sub(r"\s+", " ", clean_b)
+    return SequenceMatcher(None, clean_a, clean_b).ratio()
 
 
 def find_similar_cases(
@@ -212,32 +229,63 @@ def find_similar_cases(
 ) -> List[SimilarCase]:
     """
     Score each historical case against the incident and return the top N.
-    Scoring uses keyword overlap + text similarity on description.
+    Prioritizes title similarity, symptom token overlap, and category alignment.
     """
-    incident_text = " ".join([
-        incident.short_description,
-        incident.description,
-        incident.logs,
-        incident.category,
-    ]).lower()
-
     scored: List[Tuple[float, Dict[str, Any]]] = []
-    for case in cases:
-        kw_score = sum(
-            1 for kw in case.get("keywords", [])
-            if kw.lower() in incident_text
-        ) / max(len(case.get("keywords", [1])), 1)
 
-        desc_score = _text_similarity(
-            incident.short_description + " " + incident.description,
-            case.get("description", "") + " " + case.get("root_cause", ""),
+    inc_tokens = _tokenize(
+        f"{incident.short_description} {incident.description} {incident.logs} {incident.recent_changes}"
+    )
+
+    for case in cases:
+        cid = case.get("case_id", "")
+        # Do not match against the exact same incident instance
+        if cid in (
+            incident.incident_number,
+            f"SN-{incident.incident_number}",
+            f"FB-{incident.incident_number}",
+        ):
+            continue
+
+        case_desc = case.get("description", "")
+        case_rc = case.get("root_cause", "")
+        case_kws = case.get("keywords", [])
+        case_cat = case.get("category", "")
+
+        # 1. Title/Short description similarity (normalized for punctuation like '--')
+        title_sim = _text_similarity(incident.short_description, case_desc)
+
+        # 2. Token overlap: what fraction of the incident's key symptoms appear in the case
+        case_tokens = _tokenize(f"{case_desc} {case_rc} {' '.join(case_kws)}")
+        token_overlap = (
+            len(inc_tokens & case_tokens) / max(len(inc_tokens), 1)
+            if inc_tokens
+            else 0.0
         )
 
-        # Category bonus
-        cat_bonus = 0.2 if incident.category.lower() == case.get("category", "").lower() else 0.0
+        # 3. Category match
+        inc_cat_norm = incident.category.strip().lower()
+        case_cat_norm = case_cat.strip().lower()
+        cat_match = 1.0 if inc_cat_norm and inc_cat_norm == case_cat_norm else 0.0
 
-        total = 0.5 * kw_score + 0.3 * desc_score + 0.2 * cat_bonus
-        scored.append((total, case))
+        # 4. Overall text similarity
+        full_sim = _text_similarity(
+            f"{incident.short_description} {incident.description}",
+            f"{case_desc} {case_rc}",
+        )
+
+        # 5. Composite scoring
+        if title_sim >= 0.75:
+            # Direct or paraphrased title match (e.g. '--' vs 'due to')
+            total = max(title_sim, 0.60 * title_sim + 0.30 * token_overlap + 0.10 * cat_match)
+        else:
+            total = 0.40 * max(title_sim, full_sim) + 0.45 * token_overlap + 0.15 * cat_match
+
+        # Reward verified resolved tickets that have strong match
+        if case.get("verified") and total >= 0.60:
+            total = min(0.98, total * 1.05)
+
+        scored.append((round(total, 3), case))
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
@@ -263,11 +311,58 @@ def local_analysis(
 ) -> RCAResult:
     evidence, dominant_cat = extract_evidence(incident)
 
-    # Confidence based on evidence count and similarity
-    top_sim = similar_cases[0].similarity_score if similar_cases else 0.0
-    evidence_score = min(len(evidence) / 6, 1.0)
-    confidence = round(0.4 * top_sim + 0.6 * evidence_score, 2)
-    confidence = max(0.1, min(confidence, 0.95))
+    top_case = similar_cases[0] if similar_cases else None
+    top_sim = top_case.similarity_score if top_case else 0.0
+
+    # Closed-loop learning: If there is a strong historical KB match (>= 70%)
+    if top_case and top_sim >= 0.70:
+        confidence = round(min(0.95, max(0.85, top_sim)), 2)
+        root_cause = (
+            f"Known recurring incident pattern matching verified case [{top_case.case_id}]: "
+            f"{top_case.root_cause}"
+        )
+        actions = [
+            f"Apply verified resolution from {top_case.case_id}: {top_case.resolution}",
+        ] + [a for a in _ACTION_MAP.get(dominant_cat, []) if a != top_case.resolution]
+        team = _TEAM_MAP.get(dominant_cat, "DevOps Team")
+    elif top_case and top_sim >= 0.50:
+        evidence_score = min(len(evidence) / 5, 1.0)
+        confidence = round(0.55 * top_sim + 0.45 * evidence_score, 2)
+        confidence = max(0.40, min(confidence, 0.85))
+        root_cause = (
+            f"Likely related to {dominant_cat}. "
+            f"Most similar historical case ({top_case.case_id}): {top_case.root_cause}"
+        )
+        actions = [
+            f"Review potential match from {top_case.case_id}: {top_case.resolution}",
+        ] + _ACTION_MAP.get(dominant_cat, [])
+        team = _TEAM_MAP.get(dominant_cat, "L2 Support")
+    elif dominant_cat != "General":
+        evidence_score = min(len(evidence) / 6, 1.0)
+        confidence = round(0.3 * top_sim + 0.7 * evidence_score, 2)
+        confidence = max(0.20, min(confidence, 0.75))
+        root_cause = (
+            f"Pattern analysis indicates a {dominant_cat} related failure. "
+            f"Review the identified evidence signals for confirmation."
+        )
+        actions = _ACTION_MAP.get(dominant_cat, [
+            "Review all recent changes to the affected system",
+            "Collect full application and infrastructure logs",
+            "Escalate to the appropriate support team for investigation",
+        ])
+        team = _TEAM_MAP.get(dominant_cat, "L2 Support")
+    else:
+        confidence = 0.25
+        root_cause = (
+            "No strong pattern match found. Requires manual investigation. "
+            "Review application and infrastructure logs for further signals."
+        )
+        actions = [
+            "Review all recent changes to the affected system",
+            "Collect full application and infrastructure logs",
+            "Escalate to the appropriate support team for investigation",
+        ]
+        team = "L2 Support"
 
     confidence_label = (
         "high" if confidence >= 0.7
@@ -275,31 +370,7 @@ def local_analysis(
         else "low"
     )
 
-    if similar_cases:
-        root_cause = (
-            f"Likely related to {dominant_cat}. "
-            f"Most similar historical case ({similar_cases[0].case_id}): "
-            f"{similar_cases[0].root_cause}"
-        )
-    elif dominant_cat != "General":
-        root_cause = (
-            f"Pattern analysis indicates a {dominant_cat} related failure. "
-            f"Review the identified evidence signals for confirmation."
-        )
-    else:
-        root_cause = (
-            "No strong pattern match found. Requires manual investigation. "
-            "Review application and infrastructure logs for further signals."
-        )
-
-    actions = _ACTION_MAP.get(dominant_cat, [
-        "Review all recent changes to the affected system",
-        "Collect full application and infrastructure logs",
-        "Escalate to the appropriate support team for investigation",
-    ])
-
     commands = _CMD_MAP.get(dominant_cat, [])
-    team = _TEAM_MAP.get(dominant_cat, "L2 Support")
 
     return RCAResult(
         incident_number=incident.incident_number,
@@ -317,6 +388,37 @@ def local_analysis(
 
 # ── AI-assisted mode analysis ─────────────────────────────────────────────────
 
+def _parse_claude_json(raw: str) -> Dict[str, Any]:
+    import json
+    raw = raw.strip()
+    # 1. Direct parse
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+
+    # 2. Strip code fences
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned.strip())
+    except Exception:
+        pass
+
+    # 3. Find outermost JSON object {...}
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = raw[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except Exception:
+            candidate_cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
+            return json.loads(candidate_cleaned)
+
+    raise ValueError(f"Could not parse valid JSON from AI response: {raw[:150]}")
+
+
 async def ai_analysis(
     incident: IncidentInput,
     similar_cases: List[SimilarCase],
@@ -330,8 +432,9 @@ async def ai_analysis(
         evidence, dominant_cat = extract_evidence(incident)
 
         similar_text = "\n".join(
-            f"- [{sc.case_id}] {sc.description} | Root cause: {sc.root_cause} "
-            f"| Resolution: {sc.resolution} | Similarity: {sc.similarity_score:.0%}"
+            f"- [{sc.case_id}] (Similarity: {sc.similarity_score:.0%}) {sc.description}\n"
+            f"  * Verified Root Cause: {sc.root_cause}\n"
+            f"  * Resolution: {sc.resolution}"
             for sc in similar_cases
         ) or "No closely matching historical cases found."
 
@@ -357,7 +460,7 @@ async def ai_analysis(
 ## Detected Evidence Signals
 {evidence_text}
 
-## Similar Historical Cases
+## Similar Historical Cases (Knowledge Base)
 {similar_text}
 
 ## Your Task
@@ -365,8 +468,8 @@ Analyze this incident and provide a structured Root Cause Analysis JSON object.
 
 Respond ONLY with a valid JSON object in this exact format:
 {{
-  "probable_root_cause": "Concise 1-3 sentence root cause explanation grounded strictly in the evidence",
-  "confidence_score": 0.72,
+  "probable_root_cause": "Concise 1-3 sentence root cause explanation grounded strictly in the evidence or matching verified historical case",
+  "confidence_score": 0.88,
   "evidence_used": ["evidence item 1", "evidence item 2"],
   "recommended_team": "Team Name",
   "recommended_actions": ["Action 1", "Action 2", "Action 3"],
@@ -377,16 +480,18 @@ Respond ONLY with a valid JSON object in this exact format:
 
 CRITICAL GROUNDING RULES:
 1. STRICT GROUNDING: Base your analysis EXCLUSIVELY on the actual incident details and logs provided for incident {incident.incident_number}.
-2. DO NOT borrow pod names, hostnames, service names (e.g., payment-api), change ticket numbers, or failure modes from historical cases if they do not exist in the current incident.
-3. If the incident is about {incident.category} (e.g. Network/VPN), your root cause MUST address {incident.category}, NOT unrelated categories like Java heap OOM or Database pools!
-4. The historical cases are only background references. If they are not relevant to the current symptoms, treat this as a NOVEL incident and diagnose solely from the reported logs and symptoms.
+2. CLOSED-LOOP KB MATCHING:
+   - If a historical case (e.g., SN-INCxxxx or HIST-xxx) matches this incident symptoms closely (similarity >= 65%):
+     * Recognize this as a KNOWN RECURRING INCIDENT pattern that has already been verified and solved in production.
+     * Directly leverage the verified root cause and resolution from the matching historical case.
+     * ELEVATE confidence_score to 0.85 - 0.95 (HIGH Confidence) because the failure mode and fix have already been proven in this environment.
+3. If no historical case matches and logs provide conclusive proof (stack traces, specific errors):
+   - Set confidence_score to 0.80 - 0.90.
+4. If no historical case matches and evidence is circumstantial or logs are sparse:
+   - Set confidence_score to 0.40 - 0.65.
 5. Provide diagnostic commands tailored specifically to the technology stack mentioned (e.g. for Network/VPN use ping, traceroute, ip route, netstat, systemctl, curl, etc.; do NOT suggest kubectl pod commands unless the incident is explicitly running on Kubernetes).
-6. Set confidence_score honestly:
-   - 0.80 - 0.95: ONLY if the logs provide clear, conclusive root cause proof or match a verified pattern.
-   - 0.50 - 0.79: Probable root cause based on symptoms, but requires diagnostic command verification.
-   - 0.20 - 0.49: Insufficient evidence or conflicting signals.
-7. Flag any commands that are potentially destructive with requires_approval: true.
-8. Do not suggest running commands automatically.
+6. Flag any commands that are potentially destructive with requires_approval: true.
+7. Do not suggest running commands automatically.
 """
 
         client = anthropic.Anthropic(api_key=api_key)
@@ -397,15 +502,21 @@ CRITICAL GROUNDING RULES:
         )
 
         raw = response.content[0].text.strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[^\n]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        data = _parse_claude_json(raw)
 
-        import json
-        data = json.loads(raw)
+        ai_confidence = float(data.get("confidence_score", 0.5))
+        top_sim = similar_cases[0].similarity_score if similar_cases else 0.0
 
-        confidence = float(data.get("confidence_score", 0.5))
+        # Closed-loop learning safeguard: If we have a verified high-confidence KB match,
+        # ensure the confidence score reflects that certainty.
+        if top_sim >= 0.75:
+            confidence = max(ai_confidence, round(min(0.95, max(0.85, top_sim)), 2))
+        elif top_sim >= 0.60:
+            confidence = max(ai_confidence, 0.78)
+        else:
+            confidence = ai_confidence
+
+        confidence = round(max(0.1, min(confidence, 0.95)), 2)
         confidence_label = (
             "high" if confidence >= 0.7
             else "medium" if confidence >= 0.4
@@ -424,7 +535,7 @@ CRITICAL GROUNDING RULES:
         return RCAResult(
             incident_number=incident.incident_number,
             probable_root_cause=data.get("probable_root_cause", "Unable to determine."),
-            confidence_score=round(confidence, 2),
+            confidence_score=confidence,
             confidence_label=confidence_label,
             evidence=data.get("evidence_used", evidence)[:10],
             recommended_team=data.get("recommended_team", "L2 Support"),
