@@ -215,9 +215,21 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="analyze-btn">🔍 Analyze Incident (AI Mode)</button>
+              <button type="button" class="btn btn-warning" id="post-snow-btn" onclick="createInServiceNow(event)">🚀 Post to ServiceNow</button>
               <button type="button" class="btn btn-ghost" onclick="clearForm()">Clear</button>
             </div>
           </form>
+
+          <!-- ServiceNow Ticket Link Banner -->
+          <div id="sn-ticket-banner" style="display:none; margin-top: 1rem; padding: 0.85rem 1rem; background: rgba(39, 174, 96, 0.1); border: 1px solid var(--green); border-radius: var(--radius);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <span style="color: var(--green); font-weight: 600;">✅ Ticket Created in ServiceNow:</span>
+                <a id="sn-ticket-link" href="#" target="_blank" style="color: var(--blue); font-weight: 700; margin-left: 0.5rem; text-decoration: underline;">INCXXXXX ↗</a>
+              </div>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">Open ticket in ServiceNow and click <strong>Run RCA Analysis</strong>!</span>
+            </div>
+          </div>
         </div>
 
         <!-- Result panel -->

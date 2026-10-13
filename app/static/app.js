@@ -269,6 +269,60 @@ async function submitAnalysis(event) {
   }
 }
 
+async function createInServiceNow(event) {
+  if (event) event.preventDefault();
+  const shortDesc = val('f-short-desc');
+  if (!shortDesc) {
+    toast('Please enter at least a Short Description before posting to ServiceNow', 'warning');
+    document.getElementById('f-short-desc').focus();
+    return;
+  }
+
+  const btn = document.getElementById('post-snow-btn');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Posting…';
+
+  const payload = {
+    incident_number: val('f-number') || 'NEW',
+    short_description: shortDesc,
+    description: val('f-description') || shortDesc,
+    category: val('f-category'),
+    priority: val('f-priority'),
+    logs: val('f-logs'),
+    recent_changes: val('f-changes'),
+    application: val('f-app'),
+    environment: 'production',
+  };
+
+  try {
+    const res = await apiFetch('/api/servicenow/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success && res.number) {
+      setVal('f-number', res.number);
+      toast(`Created incident ${res.number} in ServiceNow!`, 'success');
+
+      const banner = document.getElementById('sn-ticket-banner');
+      const link = document.getElementById('sn-ticket-link');
+      if (banner && link) {
+        link.textContent = `${res.number} ↗`;
+        link.href = res.link || `https://dev411616.service-now.com/nav_to.do?uri=incident.do?sys_id=${res.sys_id}`;
+        banner.style.display = 'block';
+        banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      toast('Failed to create ticket: ' + (res.error || 'Unknown error'), 'error');
+    }
+  } catch(e) {
+    toast('ServiceNow post error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🚀 Post to ServiceNow';
+  }
+}
+
 async function generateAndAnalyze() {
   const loading = document.getElementById('analyze-loading');
   loading.style.display = 'flex';

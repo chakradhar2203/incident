@@ -143,6 +143,45 @@ class ServiceNowClient:
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
+    # ── Create incident ───────────────────────────────────────────────────────
+
+    async def create_incident(self, incident: IncidentInput) -> Dict[str, Any]:
+        """Create a new incident ticket in ServiceNow."""
+        payload: Dict[str, Any] = {
+            "short_description": incident.short_description,
+            "description": incident.description,
+            "category": incident.category.lower(),
+            "priority": incident.priority[0] if incident.priority and incident.priority[0].isdigit() else "2",
+            "state": "1",  # New
+        }
+        if incident.logs:
+            payload["u_application_logs"] = incident.logs
+            payload["comments"] = f"Application / Infrastructure Logs:\n{incident.logs}"
+        if incident.recent_changes:
+            payload["u_recent_changes"] = incident.recent_changes
+        if incident.application:
+            payload["cmdb_ci"] = incident.application
+
+        url = f"{self.base_url}/api/now/table/{INCIDENT_TABLE}"
+        try:
+            async with self._client() as c:
+                resp = await c.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json().get("result", {})
+                num = data.get("number")
+                sys_id = data.get("sys_id")
+                return {
+                    "success": True,
+                    "number": num,
+                    "sys_id": sys_id,
+                    "link": f"{self.base_url}/nav_to.do?uri=incident.do?sys_id={sys_id}",
+                }
+        except httpx.HTTPStatusError as exc:
+            return {"success": False, "error": f"HTTP {exc.response.status_code}: {exc.response.text[:300]}"}
+        except Exception as exc:
+            logger.error("Failed to create incident in ServiceNow: %s", exc)
+            return {"success": False, "error": str(exc)}
+
     @staticmethod
     def _format_work_note(rca: RCAResult) -> str:
         lines = [

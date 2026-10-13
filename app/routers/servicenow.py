@@ -39,6 +39,17 @@ async def fetch_incidents(limit: int = 10) -> List[dict]:
     return [i.model_dump() for i in incidents]
 
 
+@router.post("/create", summary="Create a new incident ticket directly in ServiceNow")
+async def create_incident(incident: IncidentInput):
+    snow = get_snow_client()
+    if not snow:
+        raise HTTPException(status_code=503, detail="ServiceNow not configured.")
+    result = await snow.create_incident(incident)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to create incident"))
+    return result
+
+
 @router.post("/decision", summary="Record engineer acceptance or rejection of RCA recommendation")
 async def record_decision(payload: RCAFeedbackDecision):
     from app.main import get_app_state
