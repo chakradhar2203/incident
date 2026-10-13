@@ -447,7 +447,8 @@ async def analyze_incident(incident: IncidentInput) -> RCAResult:
     all_cases = kb.get_all_cases()
     similar_cases = find_similar_cases(incident, all_cases)
 
-    if settings.analysis_mode == "ai" and settings.claude_api_key:
+    # Always use AI analysis mode when Claude API key is available
+    if settings.claude_api_key:
         result = await ai_analysis(
             incident, similar_cases,
             api_key=settings.claude_api_key,

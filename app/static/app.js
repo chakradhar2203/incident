@@ -126,6 +126,93 @@ async function stopScheduler() {
 }
 
 // ── Analyze tab ───────────────────────────────────────────────────────────────
+const TEST_PRESETS = {
+  disk_full: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'storage',
+    priority: '2 - High',
+    app: 'app-server-03',
+    short_desc: '/var filesystem full due to uncontrolled application log growth',
+    desc: 'Monitoring reports critical disk utilization (>95%) on /var partition. Application write failures reported across services.',
+    logs: 'No space left on device (ENOSPC)\nwrite failed: /var/log/app/payment.log\ndf -h: /dev/sda1 100% /var\nOSError: [Errno 28] No space left on device',
+    changes: 'Log rotation policy was modified in /etc/logrotate.d/ during yesterday maintenance.'
+  },
+  db_pool: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'database',
+    priority: '1 - Critical',
+    app: 'order-service',
+    short_desc: 'HTTP 503 errors on order-service – database connection pool exhausted',
+    desc: 'Users experiencing 503 Service Unavailable when placing orders. HikariCP pool at maximum capacity. Queries timing out after 30s.',
+    logs: 'HikariPool-1 - Connection is not available, request timed out after 30000ms\nPool stats (total=50, active=50, idle=0, waiting=23)\nHTTP 503 Service Unavailable\norg.postgresql.util.PSQLException: FATAL: remaining connection slots reserved',
+    changes: 'Database maintenance window last night; max_connections parameter not restored.'
+  },
+  oom_killed: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'memory',
+    priority: '1 - Critical',
+    app: 'payment-api',
+    short_desc: 'Production service OOMKilled – payment-api pods restarting (Exit 137)',
+    desc: 'Payment API deployment in prod experiencing repeated pod evictions. Kubernetes reports OOMKilled with exit code 137.',
+    logs: 'java.lang.OutOfMemoryError: Java heap space\n\tat java.util.Arrays.copyOf(Arrays.java:3210)\nOOMKilled exit code 137\nkubernetes: pod payment-api-7d9f6b5c4-xkp2q restarted 8 times',
+    changes: 'Pod heap size reduced from -Xmx4g to -Xmx2g in last release.'
+  },
+  ssl_expired: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'authentication',
+    priority: '1 - Critical',
+    app: 'api-gateway',
+    short_desc: 'SSL certificate expired – API gateway returning 401 / TLS handshake failure',
+    desc: 'API Gateway is rejecting all incoming HTTPS traffic with SSL handshake failure. Certificate expiry was reached.',
+    logs: 'SSL_ERROR_RX_RECORD_TOO_LONG\nERR_CERT_DATE_INVALID\nTLS handshake failed: certificate has expired\ncert-manager: ClusterIssuer letsencrypt-prod is not ready: ACME account error',
+    changes: 'ClusterIssuer updated 2 weeks ago to change ACME email address.'
+  },
+  sssd_auth: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'authentication',
+    priority: '2 - High',
+    app: 'ad-auth-service',
+    short_desc: 'SSSD authentication failures due to expired AD trust credentials',
+    desc: 'Linux server domain authentication failing for enterprise users. SSSD service unable to authenticate against Active Directory.',
+    logs: 'sssd[be[domain]]: [krb5_child[12345]] Keytab ticket expired or domain trust credentials rejected\nFailed to authenticate user via PAM: Authentication token expired\nsystemd: pam_sss(sshd:auth): authentication failure; logname= uid=0 euid=0',
+    changes: 'Active Directory domain controller trust certificates rotated last weekend.'
+  },
+  dns_failure: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'network',
+    priority: '2 - High',
+    app: 'core-dns-service',
+    short_desc: 'DNS resolution failures caused by unreachable configured nameservers',
+    desc: 'Internal services failing to resolve domain names. resolve.conf pointing to decommissioned IP address.',
+    logs: 'Name or service not known (EAI_NONAME)\nnslookup: connection timed out; no servers could be reached\nresolver: query failed to 10.0.0.2:53 (SERVFAIL)',
+    changes: 'Subnet DNS IP migration completed overnight without updating DHCP options.'
+  },
+  iis_disk: {
+    number: 'INC00' + Math.floor(10000 + Math.random() * 90000),
+    category: 'storage',
+    priority: '2 - High',
+    app: 'iis-web-cluster',
+    short_desc: 'Windows Server system drive exhausted by IIS log and dump growth',
+    desc: 'C: system drive has 0 MB free disk space. IIS worker processes crashing and refusing incoming requests.',
+    logs: 'Event ID 1500: The server cannot allocate more space on drive C:\nHTTP 500.19 - Internal Server Error - Cannot read configuration file\nDisk free space: 0 MB of 120 GB',
+    changes: 'High traffic event caused W3C log files to accumulate in C:\\inetpub\\logs\\LogFiles.'
+  }
+};
+
+function loadTestPreset(type) {
+  const p = TEST_PRESETS[type];
+  if (!p) return;
+  setVal('f-number', p.number);
+  setVal('f-category', p.category);
+  setVal('f-priority', p.priority);
+  setVal('f-app', p.app);
+  setVal('f-short-desc', p.short_desc);
+  setVal('f-description', p.desc);
+  setVal('f-logs', p.logs);
+  setVal('f-changes', p.changes);
+  toast(`Loaded scenario: ${p.short_desc.substring(0, 35)}...`, 'info');
+}
+
 async function submitAnalysis(event) {
   event.preventDefault();
   const btn = document.getElementById('analyze-btn');
@@ -135,8 +222,12 @@ async function submitAnalysis(event) {
   loading.style.display = 'flex';
   document.getElementById('result-panel').style.display = 'none';
 
+  const autoNum = 'INC00' + Math.floor(10000 + Math.random() * 90000);
+  const incNum = val('f-number') || autoNum;
+  setVal('f-number', incNum);
+
   const payload = {
-    incident_number: val('f-number'),
+    incident_number: incNum,
     short_description: val('f-short-desc'),
     description: val('f-description'),
     category: val('f-category'),

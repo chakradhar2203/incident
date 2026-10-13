@@ -139,12 +139,33 @@
       <div class="two-col">
         <!-- Form -->
         <div class="panel">
-          <div class="panel-header"><h3>Incident Details</h3></div>
+          <div class="panel-header">
+            <h3>Incident Details</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">AI Analysis Grounded by Knowledge Base</span>
+          </div>
+
+          <!-- Quick Test Incident Presets -->
+          <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
+              <span>⚡ Quick Test Incidents (1-Click Presets)</span>
+              <span style="font-size: 0.75rem; text-transform: none; color: var(--blue);">Click any scenario to populate &amp; post</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+              <button type="button" class="preset-chip" onclick="loadTestPreset('disk_full')">💾 /var Disk Full</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('db_pool')">🐘 PostgreSQL Pool 503</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('oom_killed')">☕ Java OOMKilled 137</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('ssl_expired')">🔒 Expired SSL Cert</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('sssd_auth')">🛡️ SSSD AD Auth Failure</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('dns_failure')">🌐 DNS Unreachable</button>
+              <button type="button" class="preset-chip" onclick="loadTestPreset('iis_disk')">🪟 Windows IIS Log Exhaustion</button>
+            </div>
+          </div>
+
           <form id="analyze-form" onsubmit="submitAnalysis(event)">
             <div class="form-grid">
               <div class="form-group">
-                <label>Incident Number *</label>
-                <input type="text" id="f-number" placeholder="INC0001234" required />
+                <label>Incident Number</label>
+                <input type="text" id="f-number" placeholder="e.g. INC0010999 (auto-generated if empty)" />
               </div>
               <div class="form-group">
                 <label>Category</label>
@@ -165,34 +186,34 @@
                 <label>Priority</label>
                 <select id="f-priority">
                   <option value="1 - Critical">1 – Critical</option>
-                  <option value="2 - High">2 – High</option>
-                  <option value="3 - Moderate" selected>3 – Moderate</option>
+                  <option value="2 - High" selected>2 – High</option>
+                  <option value="3 - Moderate">3 – Moderate</option>
                   <option value="4 - Low">4 – Low</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Application / Service</label>
-                <input type="text" id="f-app" placeholder="payment-api" />
+                <input type="text" id="f-app" placeholder="e.g. payment-service, order-api, db-cluster" />
               </div>
             </div>
             <div class="form-group">
               <label>Short Description *</label>
-              <input type="text" id="f-short-desc" placeholder="Brief summary of the incident" required />
+              <input type="text" id="f-short-desc" placeholder="e.g. /var filesystem full due to uncontrolled application log growth" required />
             </div>
             <div class="form-group">
               <label>Detailed Description</label>
-              <textarea id="f-description" rows="4" placeholder="Full incident description, symptoms, impact…"></textarea>
+              <textarea id="f-description" rows="4" placeholder="e.g. Monitoring alerts report critical disk utilization (&gt;95%) on /var partition. Application write operations failing and transactions blocked."></textarea>
             </div>
             <div class="form-group">
               <label>Application / Infrastructure Logs</label>
-              <textarea id="f-logs" rows="6" placeholder="Paste relevant log excerpts here…" class="mono"></textarea>
+              <textarea id="f-logs" rows="6" placeholder="e.g. No space left on device&#10;write failed: /var/log/app/payment.log&#10;df -h /var: 100% capacity&#10;OSError: [Errno 28] No space left on device" class="mono"></textarea>
             </div>
             <div class="form-group">
               <label>Recent Changes</label>
-              <textarea id="f-changes" rows="3" placeholder="Recent deployments, config changes, patches…"></textarea>
+              <textarea id="f-changes" rows="3" placeholder="e.g. Log rotation configuration updated or disabled during yesterday's maintenance window (CHG0045102)"></textarea>
             </div>
             <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="analyze-btn">🔍 Analyze Incident</button>
+              <button type="submit" class="btn btn-primary" id="analyze-btn">🔍 Analyze Incident (AI Mode)</button>
               <button type="button" class="btn btn-ghost" onclick="clearForm()">Clear</button>
             </div>
           </form>

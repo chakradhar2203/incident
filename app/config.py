@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     firebase_project_id: str = ""
 
     # ── Application ───────────────────────────────────────────
-    analysis_mode: str = "local"   # "local" | "ai"
+    analysis_mode: str = "ai"   # "local" | "ai" (always AI mode by default)
     app_host: str = "0.0.0.0"
     app_port: int = 8080
     scheduler_interval_minutes: int = 2
