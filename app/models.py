@@ -55,6 +55,9 @@ class RCAResult(BaseModel):
     similar_cases: List[SimilarCase] = []
     analysis_mode: str = "local"
     writeback_status: Optional[str] = None
+    decision: Optional[str] = "pending"  # pending / accepted / rejected
+    decision_notes: Optional[str] = ""
+    decided_at: Optional[str] = None
     analyzed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -79,7 +82,7 @@ class ResolveWebhookPayload(BaseModel):
 
 
 class RCAFeedbackDecision(BaseModel):
-    incident_number: str
+    incident_number: Optional[str] = None
     decision: str = "accepted"  # "accepted" or "rejected"
     engineer_notes: Optional[str] = ""
     assignment_group: Optional[str] = ""

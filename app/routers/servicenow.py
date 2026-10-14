@@ -53,20 +53,30 @@ async def create_incident(incident: IncidentInput):
 @router.post("/decision", summary="Record engineer acceptance or rejection of RCA recommendation")
 async def record_decision(payload: RCAFeedbackDecision):
     from app.main import get_app_state
+    from app.knowledge_base import get_knowledge_base
     state = get_app_state()
+    inc_num = payload.incident_number or "UNKNOWN"
     decisions = state.setdefault("rca_decisions", {})
-    decisions[payload.incident_number] = payload.model_dump()
+    decisions[inc_num] = payload.model_dump()
+
+    # Persist decision into Firestore rca_analysis_history
+    kb = get_knowledge_base()
+    kb.update_analysis_decision(
+        incident_number=inc_num,
+        decision=payload.decision,
+        engineer_notes=payload.engineer_notes or "",
+    )
 
     logger.info(
         "RCA %s for incident %s by engineer. Notes: %s",
         payload.decision.upper(),
-        payload.incident_number,
+        inc_num,
         payload.engineer_notes or "None",
     )
 
     return {
         "success": True,
-        "incident_number": payload.incident_number,
+        "incident_number": inc_num,
         "decision": payload.decision,
         "message": f"RCA recommendation {payload.decision} recorded successfully.",
     }

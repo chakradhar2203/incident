@@ -26,6 +26,7 @@
       <nav class="nav-tabs">
         <button class="nav-tab active" data-tab="dashboard">📊 Dashboard</button>
         <button class="nav-tab" data-tab="analyze">🔍 Analyze</button>
+        <button class="nav-tab" data-tab="history">📋 RCA History</button>
         <button class="nav-tab" data-tab="servicenow">🔗 ServiceNow</button>
         <button class="nav-tab" data-tab="knowledge">📚 Knowledge Base</button>
         <button class="nav-tab" data-tab="copilot">💬 Copilot</button>
@@ -237,6 +238,8 @@
           <div class="panel-header">
             <h3>RCA Result — <span id="r-incident-number"></span></h3>
             <div class="btn-group">
+              <button class="btn btn-sm btn-success" id="r-accept-btn" onclick="decideCurrent('accepted')">✅ Accept</button>
+              <button class="btn btn-sm btn-danger" id="r-reject-btn" onclick="decideCurrent('rejected')">❌ Reject</button>
               <button class="btn btn-sm btn-ghost" onclick="copyResult()">📋 Copy</button>
               <button class="btn btn-sm btn-warning" id="r-wb-btn" onclick="writebackCurrent()" style="display:none">📤 Write to SN</button>
             </div>
@@ -250,6 +253,9 @@
               <div class="conf-mode" id="r-conf-mode"></div>
             </div>
           </div>
+
+          <!-- Decision banner -->
+          <div id="r-decision-banner" style="display:none; padding:0.6rem 0.9rem; border-radius:var(--radius); margin-bottom:1rem; font-size:0.85rem; font-weight:500;"></div>
 
           <!-- Root cause -->
           <div class="result-section">
@@ -311,6 +317,48 @@
       <div id="analyze-loading" class="loading-overlay" style="display:none">
         <div class="spinner"></div>
         <div class="loading-text">Analyzing incident…</div>
+      </div>
+    </section>
+
+    <!-- ══════════════ RCA HISTORY TAB ══════════════ -->
+    <section id="tab-history" class="tab-section">
+      <div class="section-header">
+        <div>
+          <h2>RCA Evaluation History</h2>
+          <div class="section-sub" style="font-size:0.85rem; color:var(--text-muted); margin-top:2px;">
+            Audited records of incident analyses evaluated by engineers (Accepted &amp; Rejected). Pending reviews are exempted.
+          </div>
+        </div>
+        <div class="btn-group">
+          <div class="filter-chips" style="display:inline-flex; gap:6px; margin-right:8px;">
+            <button class="btn btn-sm btn-ghost active" id="hf-all" onclick="filterHistory('all')">All Evaluated</button>
+            <button class="btn btn-sm btn-ghost" id="hf-accepted" onclick="filterHistory('accepted')">✅ Accepted</button>
+            <button class="btn btn-sm btn-ghost" id="hf-rejected" onclick="filterHistory('rejected')">❌ Rejected</button>
+          </div>
+          <button class="btn btn-sm btn-ghost" onclick="loadHistoryTab()">↻ Refresh</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrapper">
+          <table id="history-table">
+            <thead>
+              <tr>
+                <th>Incident #</th>
+                <th>Decision</th>
+                <th>Probable Root Cause</th>
+                <th>Confidence</th>
+                <th>Recommended Team</th>
+                <th>Engineer Notes / Feedback</th>
+                <th>Decided At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="8" class="empty-cell">Loading evaluated history…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 

@@ -16,6 +16,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'dashboard') loadDashboard();
+    if (tab.dataset.tab === 'history') loadHistoryTab();
     if (tab.dataset.tab === 'knowledge') loadKnowledge();
   });
 });
@@ -412,6 +413,9 @@ function renderRcaResult(rca) {
   const wbBtn = document.getElementById('r-wb-btn');
   wbBtn.style.display = 'inline-flex';
 
+  // Render decision status (accepted / rejected / pending)
+  renderDecisionStatus(rca.decision || 'pending', rca.decision_notes || '');
+
   // Show panel
   document.getElementById('result-panel').style.display = 'block';
   document.getElementById('result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -687,5 +691,146 @@ function toast(msg, type = 'info') {
   el.textContent = msg;
   container.appendChild(el);
   setTimeout(() => el.remove(), 4000);
+}
+
+// ── Decision Support (Accepted / Rejected) ──────────────────────────────────
+function renderDecisionBadge(decision) {
+  const d = (decision || 'pending').toLowerCase().trim();
+  if (d === 'accepted') {
+    return '<span class="badge" style="background:rgba(16,185,129,0.18); color:#10b981; border:1px solid rgba(16,185,129,0.3); font-weight:600;">✅ Accepted</span>';
+  } else if (d === 'rejected') {
+    return '<span class="badge" style="background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.3); font-weight:600;">❌ Rejected</span>';
+  } else {
+    return '<span class="badge" style="background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); font-weight:600;">⏳ Pending</span>';
+  }
+}
+
+function renderDecisionStatus(decision, notes) {
+  const banner = document.getElementById('r-decision-banner');
+  const acceptBtn = document.getElementById('r-accept-btn');
+  const rejectBtn = document.getElementById('r-reject-btn');
+  if (!banner) return;
+
+  const d = (decision || 'pending').toLowerCase().trim();
+  banner.style.display = 'block';
+
+  if (d === 'accepted') {
+    banner.style.background = 'rgba(16, 185, 129, 0.12)';
+    banner.style.border = '1px solid rgba(16, 185, 129, 0.35)';
+    banner.style.color = '#10b981';
+    banner.innerHTML = `<strong>✅ Engineer Review: ACCEPTED</strong> — Root cause verified and confirmed by engineer. ${notes ? `<div style="font-size:0.8rem; margin-top:3px; color:var(--text-secondary);">Feedback: ${escHtml(notes)}</div>` : ''}`;
+    if (acceptBtn) { acceptBtn.disabled = true; acceptBtn.style.opacity = '0.6'; acceptBtn.style.display = 'inline-flex'; }
+    if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.style.opacity = '1'; rejectBtn.style.display = 'inline-flex'; }
+  } else if (d === 'rejected') {
+    banner.style.background = 'rgba(239, 68, 68, 0.12)';
+    banner.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+    banner.style.color = '#ef4444';
+    banner.innerHTML = `<strong>❌ Engineer Review: REJECTED</strong> — AI diagnosis rejected by engineer. ${notes ? `<div style="font-size:0.8rem; margin-top:3px; color:var(--text-secondary);">Reason: ${escHtml(notes)}</div>` : ''}`;
+    if (acceptBtn) { acceptBtn.disabled = false; acceptBtn.style.opacity = '1'; acceptBtn.style.display = 'inline-flex'; }
+    if (rejectBtn) { rejectBtn.disabled = true; rejectBtn.style.opacity = '0.6'; rejectBtn.style.display = 'inline-flex'; }
+  } else {
+    banner.style.background = 'rgba(245, 158, 11, 0.10)';
+    banner.style.border = '1px solid rgba(245, 158, 11, 0.30)';
+    banner.style.color = '#f59e0b';
+    banner.innerHTML = `<strong>⏳ Engineer Review: PENDING</strong> — Awaiting engineer evaluation. Click Accept or Reject above.`;
+    if (acceptBtn) { acceptBtn.disabled = false; acceptBtn.style.opacity = '1'; acceptBtn.style.display = 'inline-flex'; }
+    if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.style.opacity = '1'; rejectBtn.style.display = 'inline-flex'; }
+  }
+}
+
+async function decideCurrent(decision) {
+  if (!_currentIncidentNumber) return;
+  const promptText = decision === 'accepted'
+    ? 'Optional engineer feedback / validation notes:'
+    : 'Reason for rejecting this AI diagnosis:';
+  const notes = prompt(promptText, decision === 'accepted' ? 'Confirmed root cause by engineer.' : 'Diagnosis does not match system logs.');
+  if (notes === null) return; // User cancelled prompt
+
+  try {
+    const res = await apiFetch(`/api/incidents/${_currentIncidentNumber}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({
+        incident_number: _currentIncidentNumber,
+        decision: decision,
+        engineer_notes: notes || `Recorded ${decision.toUpperCase()} on dashboard.`
+      })
+    });
+    if (_currentRca) {
+      _currentRca.decision = decision;
+      _currentRca.decision_notes = notes || `Recorded ${decision.toUpperCase()} on dashboard.`;
+    }
+    renderDecisionStatus(decision, notes || `Recorded ${decision.toUpperCase()} on dashboard.`);
+    toast(`Incident ${_currentIncidentNumber} marked as ${decision.toUpperCase()}!`, 'success');
+  } catch(e) {
+    toast(`Failed to record decision: ${e.message}`, 'error');
+  }
+}
+
+// ── RCA Evaluation History (Accepted & Rejected, Exempting Pending) ──────────
+let _allHistory = [];
+let _historyFilter = 'all';
+
+async function loadHistoryTab() {
+  const tbody = document.getElementById('history-tbody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">Loading evaluated history…</td></tr>';
+  }
+  try {
+    _allHistory = await apiFetch('/api/incidents/history/decisions');
+    renderHistoryTable();
+  } catch(e) {
+    console.error('Failed to load history:', e);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-cell text-danger">Failed to load history: ${escHtml(e.message)}</td></tr>`;
+    }
+  }
+}
+
+function filterHistory(filter) {
+  _historyFilter = filter;
+  ['all', 'accepted', 'rejected'].forEach(f => {
+    const el = document.getElementById('hf-' + f);
+    if (el) el.classList.toggle('active', f === filter);
+  });
+  renderHistoryTable();
+}
+
+function renderHistoryTable() {
+  const tbody = document.getElementById('history-tbody');
+  if (!tbody) return;
+
+  let items = _allHistory || [];
+  if (_historyFilter === 'accepted') {
+    items = items.filter(r => (r.decision || '').toLowerCase() === 'accepted');
+  } else if (_historyFilter === 'rejected') {
+    items = items.filter(r => (r.decision || '').toLowerCase() === 'rejected');
+  }
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-cell">No evaluated incidents matching "<strong>${_historyFilter}</strong>". (Pending incidents are exempted).</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map(r => `
+    <tr>
+      <td><code>${escHtml(r.incident_number)}</code></td>
+      <td>${renderDecisionBadge(r.decision)}</td>
+      <td title="${escHtml(r.probable_root_cause)}">${escHtml(truncate(r.probable_root_cause, 60))}</td>
+      <td><span class="badge badge-${r.confidence_label}">${r.confidence_label} ${(r.confidence_score*100).toFixed(0)}%</span></td>
+      <td><span class="badge badge-blue">${escHtml(r.recommended_team || '—')}</span></td>
+      <td style="max-width:200px; font-size:0.8rem; color:var(--text-secondary);" title="${escHtml(r.decision_notes || '')}">
+        ${escHtml(truncate(r.decision_notes || '—', 50))}
+      </td>
+      <td style="font-size:0.75rem; color:var(--text-muted);">${formatDate(r.decided_at || r.analyzed_at)}</td>
+      <td>
+        <button class="btn btn-sm btn-ghost" onclick="viewHistoryIncident('${escHtml(r.incident_number)}')">🔍 View RCA</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function viewHistoryIncident(incNum) {
+  showTab('analyze');
+  viewRca(incNum);
 }
 

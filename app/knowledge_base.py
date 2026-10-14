@@ -498,6 +498,8 @@ class FirebaseKnowledgeBase:
         Persist an incident RCA analysis result to Firestore collection rca_analysis_history.
         """
         incident_number = rca_dict.get("incident_number", "UNKNOWN")
+        rca_dict.setdefault("decision", "pending")
+        rca_dict.setdefault("decision_notes", "")
         analyzed_at = rca_dict.get("analyzed_at")
         if isinstance(analyzed_at, datetime):
             rca_dict["analyzed_at"] = analyzed_at.isoformat()
@@ -506,12 +508,37 @@ class FirebaseKnowledgeBase:
 
         if self._firebase_ready:
             try:
-                self._db.collection(self._history_collection).document(incident_number).set(rca_dict)
+                self._db.collection(self._history_collection).document(incident_number).set(rca_dict, merge=True)
                 logger.info("Saved analysis for %s to Firestore rca_analysis_history.", incident_number)
             except Exception as exc:
                 logger.warning("Failed to save analysis to Firestore: %s — saving to in-memory.", exc)
 
         self._in_memory_history[incident_number] = rca_dict
+
+    def update_analysis_decision(
+        self, incident_number: str, decision: str, engineer_notes: str = ""
+    ) -> bool:
+        """
+        Record engineer decision ('accepted' or 'rejected') for an analyzed incident in Firestore rca_analysis_history.
+        """
+        update_data = {
+            "decision": decision.lower().strip(),
+            "decision_notes": engineer_notes,
+            "decided_at": datetime.utcnow().isoformat(),
+        }
+        if self._firebase_ready:
+            try:
+                doc_ref = self._db.collection(self._history_collection).document(incident_number)
+                doc_ref.set(update_data, merge=True)
+                logger.info("Updated decision for %s to %s in Firestore rca_analysis_history.", incident_number, decision)
+            except Exception as exc:
+                logger.warning("Failed to update decision in Firestore: %s", exc)
+
+        if incident_number in self._in_memory_history:
+            self._in_memory_history[incident_number].update(update_data)
+        else:
+            self._in_memory_history[incident_number] = {"incident_number": incident_number, **update_data}
+        return True
 
     def get_all_analysis_results(self) -> List[Dict[str, Any]]:
         """
