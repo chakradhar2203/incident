@@ -27,11 +27,24 @@ def _state() -> Dict[str, Any]:
 
 def _update_metrics(rca: RCAResult) -> None:
     s = _state()
-    s["incidents_analyzed"] += 1
     s["all_results"][rca.incident_number] = rca
-    s["confidence_sum"] = s.get("confidence_sum", 0.0) + rca.confidence_score
-    if rca.confidence_score >= 0.7:
-        s["high_confidence_count"] = s.get("high_confidence_count", 0) + 1
+    s["incidents_analyzed"] = len(s["all_results"])
+    s["confidence_sum"] = sum(
+        (r.confidence_score if hasattr(r, "confidence_score") else float(r.get("confidence_score", 0.0)))
+        for r in s["all_results"].values()
+    )
+    s["high_confidence_count"] = sum(
+        1 for r in s["all_results"].values()
+        if (r.confidence_score if hasattr(r, "confidence_score") else float(r.get("confidence_score", 0.0))) >= 0.7
+    )
+
+    # Persist analysis result to Firestore
+    try:
+        from app.knowledge_base import get_knowledge_base
+        kb = get_knowledge_base()
+        kb.save_analysis_result(rca.model_dump())
+    except Exception as exc:
+        logger.warning("Could not persist analysis to Firestore: %s", exc)
 
 
 @router.post("/analyze", response_model=RCAResult, summary="Analyze an incident and generate RCA")
@@ -58,27 +71,46 @@ async def analyze(incident: IncidentInput):
 
 @router.get("", summary="List all analyzed incidents")
 async def list_incidents() -> List[Dict[str, Any]]:
-    results = _state().get("all_results", {})
+    from app.knowledge_base import get_knowledge_base
+    kb = get_knowledge_base()
+    all_res = kb.get_all_analysis_results()
+    if not all_res:
+        all_res = [
+            r.model_dump() if hasattr(r, "model_dump") else r
+            for r in _state().get("all_results", {}).values()
+        ]
+
+    # Sort newest first
+    all_res.sort(key=lambda x: str(x.get("analyzed_at", "")), reverse=True)
+
     return [
         {
-            "incident_number": r.incident_number,
-            "probable_root_cause": r.probable_root_cause[:120],
-            "confidence_score": r.confidence_score,
-            "confidence_label": r.confidence_label,
-            "recommended_team": r.recommended_team,
-            "analysis_mode": r.analysis_mode,
-            "analyzed_at": r.analyzed_at.isoformat(),
+            "incident_number": r.get("incident_number", "?"),
+            "probable_root_cause": (r.get("probable_root_cause") or "")[:120],
+            "confidence_score": float(r.get("confidence_score", 0.0)),
+            "confidence_label": r.get("confidence_label", "medium"),
+            "recommended_team": r.get("recommended_team", ""),
+            "analysis_mode": r.get("analysis_mode", "local"),
+            "analyzed_at": str(r.get("analyzed_at", "")),
         }
-        for r in results.values()
+        for r in all_res
     ]
 
 
 @router.get("/{incident_number}", response_model=RCAResult, summary="Get stored RCA result")
 async def get_rca(incident_number: str):
-    result = _state().get("all_results", {}).get(incident_number)
-    if not result:
+    res = _state().get("all_results", {}).get(incident_number)
+    if not res:
+        from app.knowledge_base import get_knowledge_base
+        kb = get_knowledge_base()
+        doc = kb.get_analysis_result(incident_number)
+        if doc:
+            res = RCAResult(**doc)
+            _state()["all_results"][incident_number] = res
+
+    if not res:
         raise HTTPException(status_code=404, detail=f"No RCA found for {incident_number}")
-    return result
+    return res if isinstance(res, RCAResult) else RCAResult(**res)
 
 
 @router.post("/feedback", summary="Submit verified resolution feedback to knowledge base")

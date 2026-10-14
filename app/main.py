@@ -34,6 +34,33 @@ _state: Dict[str, Any] = {
 async def lifespan(app: FastAPI):
     # Share state with scheduler
     init_app_state(_state)
+
+    # Pre-load persistent analysis history and metrics from Firestore
+    try:
+        from app.knowledge_base import get_knowledge_base
+        kb = get_knowledge_base()
+        past = kb.get_all_analysis_results()
+        for r in past:
+            inc_num = r.get("incident_number")
+            if inc_num:
+                _state["all_results"][inc_num] = r
+        _state["incidents_analyzed"] = len(_state["all_results"])
+        _state["confidence_sum"] = sum(
+            float(r.get("confidence_score", 0.0)) for r in _state["all_results"].values()
+        )
+        _state["high_confidence_count"] = sum(
+            1 for r in _state["all_results"].values() if float(r.get("confidence_score", 0.0)) >= 0.7
+        )
+        if _state["incidents_analyzed"] > 0:
+            avg = _state["confidence_sum"] / _state["incidents_analyzed"]
+            logger.info(
+                "Restored %d persistent incident analyses from Firestore. Avg confidence: %.1f%%",
+                _state["incidents_analyzed"],
+                avg * 100,
+            )
+    except Exception as exc:
+        logger.warning("Could not pre-load persistent analyses from Firestore: %s", exc)
+
     logger.info("RCA Assistant started.")
     yield
     stop_scheduler()

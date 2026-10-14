@@ -20,6 +20,28 @@ async def get_config():
     s = get_settings()
     from app.main import get_app_state
     state = get_app_state()
+
+    # Pre-populate state from Firestore if not yet loaded
+    if state["incidents_analyzed"] == 0 and not state.get("_history_preloaded"):
+        try:
+            from app.knowledge_base import get_knowledge_base
+            kb = get_knowledge_base()
+            past = kb.get_all_analysis_results()
+            for r in past:
+                inc_num = r.get("incident_number")
+                if inc_num:
+                    state["all_results"][inc_num] = r
+            state["incidents_analyzed"] = len(state["all_results"])
+            state["confidence_sum"] = sum(
+                float(r.get("confidence_score", 0.0)) for r in state["all_results"].values()
+            )
+            state["high_confidence_count"] = sum(
+                1 for r in state["all_results"].values() if float(r.get("confidence_score", 0.0)) >= 0.7
+            )
+            state["_history_preloaded"] = True
+        except Exception:
+            pass
+
     n = state["incidents_analyzed"]
     avg_conf = (state["confidence_sum"] / n) if n > 0 else 0.0
 

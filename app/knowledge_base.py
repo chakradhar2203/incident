@@ -395,7 +395,9 @@ class FirebaseKnowledgeBase:
     def __init__(self, service_account_path: str = "", project_id: str = ""):
         self._db = None
         self._collection = "rca_knowledge_base"
+        self._history_collection = "rca_analysis_history"
         self._in_memory: List[Dict[str, Any]] = list(SEED_CASES)
+        self._in_memory_history: Dict[str, Dict[str, Any]] = {}
         self._firebase_ready = False
 
         sa_json_env = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
@@ -490,6 +492,56 @@ class FirebaseKnowledgeBase:
     @property
     def is_firebase_connected(self) -> bool:
         return self._firebase_ready
+
+    def save_analysis_result(self, rca_dict: Dict[str, Any]) -> None:
+        """
+        Persist an incident RCA analysis result to Firestore collection rca_analysis_history.
+        """
+        incident_number = rca_dict.get("incident_number", "UNKNOWN")
+        analyzed_at = rca_dict.get("analyzed_at")
+        if isinstance(analyzed_at, datetime):
+            rca_dict["analyzed_at"] = analyzed_at.isoformat()
+        elif not analyzed_at:
+            rca_dict["analyzed_at"] = datetime.utcnow().isoformat()
+
+        if self._firebase_ready:
+            try:
+                self._db.collection(self._history_collection).document(incident_number).set(rca_dict)
+                logger.info("Saved analysis for %s to Firestore rca_analysis_history.", incident_number)
+            except Exception as exc:
+                logger.warning("Failed to save analysis to Firestore: %s — saving to in-memory.", exc)
+
+        self._in_memory_history[incident_number] = rca_dict
+
+    def get_all_analysis_results(self) -> List[Dict[str, Any]]:
+        """
+        Retrieve all past incident analyses from Firestore.
+        """
+        if self._firebase_ready:
+            try:
+                docs = self._db.collection(self._history_collection).stream()
+                results = [doc.to_dict() for doc in docs]
+                for r in results:
+                    inc_num = r.get("incident_number")
+                    if inc_num:
+                        self._in_memory_history[inc_num] = r
+                return results
+            except Exception as exc:
+                logger.warning("Failed to read analysis history from Firestore: %s — using in-memory.", exc)
+        return list(self._in_memory_history.values())
+
+    def get_analysis_result(self, incident_number: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a single past analysis result from Firestore.
+        """
+        if self._firebase_ready:
+            try:
+                doc = self._db.collection(self._history_collection).document(incident_number).get()
+                if doc.exists:
+                    return doc.to_dict()
+            except Exception as exc:
+                logger.warning("Failed to fetch analysis for %s from Firestore: %s", incident_number, exc)
+        return self._in_memory_history.get(incident_number)
 
 
 # ── Module-level singleton ────────────────────────────────────────────────────
