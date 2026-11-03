@@ -147,11 +147,18 @@ class ServiceNowClient:
 
     async def create_incident(self, incident: IncidentInput) -> Dict[str, Any]:
         """Create a new incident ticket in ServiceNow."""
+        p_val = incident.priority[0] if incident.priority and incident.priority[0].isdigit() else "2"
+        # In ServiceNow, Priority is calculated by Data Lookup Rules from Impact & Urgency
+        impact_map = {"1": "1", "2": "1", "3": "2", "4": "3"}
+        urgency_map = {"1": "1", "2": "2", "3": "2", "4": "3"}
+
         payload: Dict[str, Any] = {
             "short_description": incident.short_description,
             "description": incident.description,
             "category": incident.category.lower(),
-            "priority": incident.priority[0] if incident.priority and incident.priority[0].isdigit() else "2",
+            "impact": impact_map.get(p_val, "2"),
+            "urgency": urgency_map.get(p_val, "2"),
+            "priority": p_val,
             "state": "1",  # New
         }
         if incident.logs:

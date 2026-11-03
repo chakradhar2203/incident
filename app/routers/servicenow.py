@@ -19,6 +19,7 @@ from app.models import IncidentInput, RCAResult, RCAFeedbackDecision, ResolveWeb
 from app.servicenow import get_snow_client
 
 logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
