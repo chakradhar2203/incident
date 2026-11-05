@@ -496,7 +496,34 @@ CRITICAL GROUNDING RULES:
 7. Do not suggest running commands automatically.
 """
 
-        if api_key.startswith("sk-or-") or "nemotron" in (model or "").lower() or "openrouter" in (model or "").lower():
+        if api_key.startswith("AIza") or "gemma" in (model or "").lower() or "gemini" in (model or "").lower():
+            # Call Google AI Studio API (Gemma 4 / Gemini)
+            google_model = model or "gemma-4-26b-a4b-it"
+            if google_model.startswith("models/"):
+                google_model = google_model.replace("models/", "")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{google_model}:generateContent?key={api_key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "responseMimeType": "application/json",
+                },
+            }
+            async with httpx.AsyncClient(timeout=60.0, verify=False) as http_client:
+                resp = await http_client.post(url, json=payload)
+                resp.raise_for_status()
+                res_data = resp.json()
+                parts = res_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                raw = ""
+                for p in reversed(parts):
+                    if p.get("text"):
+                        candidate = p["text"].strip()
+                        if "{" in candidate and "}" in candidate:
+                            raw = candidate
+                            break
+                if not raw and parts:
+                    raw = parts[-1].get("text", "").strip()
+        elif api_key.startswith("sk-or-") or "nemotron" in (model or "").lower() or "openrouter" in (model or "").lower():
             # Call OpenRouter API (NVIDIA Nemotron 3 Ultra or any OpenRouter model)
             openrouter_model = model if ("/" in (model or "")) else "nvidia/nemotron-3-ultra-550b-a55b:free"
             async with httpx.AsyncClient(timeout=60.0) as http_client:
