@@ -11,6 +11,8 @@ import re
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Tuple
 
+import httpx
+
 from app.models import (
     DiagnosticCommand,
     IncidentInput,
@@ -494,14 +496,35 @@ CRITICAL GROUNDING RULES:
 7. Do not suggest running commands automatically.
 """
 
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            max_tokens=1500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        raw = response.content[0].text.strip()
+        if api_key.startswith("sk-or-") or "nemotron" in (model or "").lower() or "openrouter" in (model or "").lower():
+            # Call OpenRouter API (NVIDIA Nemotron 3 Ultra or any OpenRouter model)
+            openrouter_model = model if ("/" in (model or "")) else "nvidia/nemotron-3-ultra-550b-a55b:free"
+            async with httpx.AsyncClient(timeout=60.0) as http_client:
+                resp = await http_client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://rca-assistant.onrender.com",
+                        "X-Title": "RCA Assistant",
+                    },
+                    json={
+                        "model": openrouter_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.2,
+                    },
+                )
+                resp.raise_for_status()
+                result_json = resp.json()
+                raw = result_json["choices"][0]["message"]["content"].strip()
+        else:
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
         data = _parse_claude_json(raw)
 
         ai_confidence = float(data.get("confidence_score", 0.5))

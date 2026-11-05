@@ -243,4 +243,3 @@ def get_snow_client() -> Optional[ServiceNowClient]:
 def reset_snow_client() -> None:
     global _snow_client
     _snow_client = None
-
