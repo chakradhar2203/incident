@@ -206,11 +206,12 @@ class ServiceNowClient:
         for act in rca.recommended_actions:
             lines.append(f"  • {act}")
         if rca.diagnostic_commands:
-            lines += ["", "🔧 Diagnostic Commands (do not run without approval):"]
+            lines += ["", "⚠️  PROCEED WITH CAUTION — DIAGNOSTIC COMMANDS:"]
             for cmd in rca.diagnostic_commands:
-                approval = " ⚠️ REQUIRES APPROVAL" if cmd.requires_approval else ""
+                approval = " [⚠️ APPROVAL REQUIRED]" if cmd.requires_approval else ""
                 lines.append(f"  $ {cmd.command}{approval}")
-                lines.append(f"    {cmd.description}")
+                if cmd.description:
+                    lines.append(f"    Purpose: {cmd.description}")
         if rca.similar_cases:
             lines += ["", "🕰️  Similar Historical Cases:"]
             for sc in rca.similar_cases:
