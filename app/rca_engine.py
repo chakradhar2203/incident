@@ -497,36 +497,60 @@ CRITICAL GROUNDING RULES:
 """
 
         if api_key.startswith("AIza") or "gemma" in (model or "").lower() or "gemini" in (model or "").lower():
-            # Call Google AI Studio API (Gemini / Gemma)
-            google_model = model or "gemini-3.5-flash"
+            # Call Google AI Studio API with multi-model fallback waterfall
+            google_model = model or "gemini-3.1-flash-lite-preview"
             if google_model.startswith("models/"):
                 google_model = google_model.replace("models/", "")
-            # gemma-4 preview does not support responseMimeType: application/json and returns 500;
-            # route to gemini-3.5-flash for reliable structured JSON RCA generation
             if "gemma" in google_model.lower():
-                google_model = "gemini-3.5-flash"
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{google_model}:generateContent?key={api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "responseMimeType": "application/json",
-                },
-            }
-            async with httpx.AsyncClient(timeout=60.0, verify=False) as http_client:
-                resp = await http_client.post(url, json=payload)
-                resp.raise_for_status()
-                res_data = resp.json()
-                parts = res_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                raw = ""
-                for p in reversed(parts):
-                    if p.get("text"):
-                        candidate = p["text"].strip()
-                        if "{" in candidate and "}" in candidate:
-                            raw = candidate
+                google_model = "gemini-3.1-flash-lite-preview"
+
+            candidate_models = [
+                google_model,
+                "gemini-3.1-flash-lite-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+            ]
+            models_to_try = []
+            for m in candidate_models:
+                if m not in models_to_try:
+                    models_to_try.append(m)
+
+            last_err = None
+            raw = ""
+            for m in models_to_try:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
+                    payload = {
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.2,
+                            "responseMimeType": "application/json",
+                        },
+                    }
+                    async with httpx.AsyncClient(timeout=30.0, verify=False) as http_client:
+                        resp = await http_client.post(url, json=payload)
+                        resp.raise_for_status()
+                        res_data = resp.json()
+                        parts = res_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                        for p in reversed(parts):
+                            if p.get("text"):
+                                candidate = p["text"].strip()
+                                if "{" in candidate and "}" in candidate:
+                                    raw = candidate
+                                    break
+                        if not raw and parts:
+                            raw = parts[-1].get("text", "").strip()
+                        if raw:
+                            logger.info("Successfully generated RCA with Google model: %s", m)
                             break
-                if not raw and parts:
-                    raw = parts[-1].get("text", "").strip()
+                except Exception as model_err:
+                    last_err = model_err
+                    logger.warning("Google model %s failed (%s), trying next fallback model...", m, model_err)
+                    continue
+
+            if not raw:
+                raise last_err or RuntimeError("All Google models failed")
         elif api_key.startswith("sk-or-") or "nemotron" in (model or "").lower() or "openrouter" in (model or "").lower():
             # Call OpenRouter API (NVIDIA Nemotron 3 Ultra or any OpenRouter model)
             openrouter_model = model if ("/" in (model or "")) else "nvidia/nemotron-3-ultra-550b-a55b:free"
