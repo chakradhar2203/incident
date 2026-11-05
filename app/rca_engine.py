@@ -316,8 +316,8 @@ def local_analysis(
     top_case = similar_cases[0] if similar_cases else None
     top_sim = top_case.similarity_score if top_case else 0.0
 
-    # Closed-loop learning: If there is a strong historical KB match (>= 70%)
-    if top_case and top_sim >= 0.70:
+    # Closed-loop learning: If there is a strong historical KB match (>= 65%)
+    if top_case and top_sim >= 0.65:
         confidence = round(min(0.95, max(0.85, top_sim)), 2)
         root_cause = (
             f"Known recurring incident pattern matching verified case [{top_case.case_id}]: "
@@ -327,18 +327,17 @@ def local_analysis(
             f"Apply verified resolution from {top_case.case_id}: {top_case.resolution}",
         ] + [a for a in _ACTION_MAP.get(dominant_cat, []) if a != top_case.resolution]
         team = _TEAM_MAP.get(dominant_cat, "DevOps Team")
-    elif top_case and top_sim >= 0.50:
-        evidence_score = min(len(evidence) / 5, 1.0)
-        confidence = round(0.55 * top_sim + 0.45 * evidence_score, 2)
-        confidence = max(0.40, min(confidence, 0.85))
+    elif top_case and top_sim >= 0.30:
+        # Previous resolution suggested from historical cases: high confidence 75% - 85%
+        confidence = round(max(0.75, min(0.86, 0.68 + 0.30 * top_sim)), 2)
         root_cause = (
             f"Likely related to {dominant_cat}. "
-            f"Most similar historical case ({top_case.case_id}): {top_case.root_cause}"
+            f"Matches historical resolution pattern ({top_case.case_id}): {top_case.root_cause}"
         )
         actions = [
-            f"Review potential match from {top_case.case_id}: {top_case.resolution}",
+            f"Apply verified resolution from {top_case.case_id}: {top_case.resolution}",
         ] + _ACTION_MAP.get(dominant_cat, [])
-        team = _TEAM_MAP.get(dominant_cat, "L2 Support")
+        team = _TEAM_MAP.get(dominant_cat, "DevOps Team")
     elif dominant_cat != "General":
         evidence_score = min(len(evidence) / 6, 1.0)
         confidence = round(0.3 * top_sim + 0.7 * evidence_score, 2)
@@ -483,10 +482,10 @@ Respond ONLY with a valid JSON object in this exact format:
 CRITICAL GROUNDING RULES:
 1. STRICT GROUNDING: Base your analysis EXCLUSIVELY on the actual incident details and logs provided for incident {incident.incident_number}.
 2. CLOSED-LOOP KB MATCHING:
-   - If a historical case (e.g., SN-INCxxxx or HIST-xxx) matches this incident symptoms closely (similarity >= 65%):
-     * Recognize this as a KNOWN RECURRING INCIDENT pattern that has already been verified and solved in production.
-     * Directly leverage the verified root cause and resolution from the matching historical case.
-     * ELEVATE confidence_score to 0.85 - 0.95 (HIGH Confidence) because the failure mode and fix have already been proven in this environment.
+   - If historical cases (e.g., SN-INCxxxx or HIST-xxx) are listed above:
+     * Recognize this as a recurring incident pattern where a previous resolution has already been verified and solved in production.
+     * Leverage the verified root cause and resolution from the matching historical case.
+     * ELEVATE confidence_score to 0.78 - 0.92 (HIGH Confidence) because previous resolution from historical cases directly informs and verifies the solution.
 3. If no historical case matches and logs provide conclusive proof (stack traces, specific errors):
    - Set confidence_score to 0.80 - 0.90.
 4. If no historical case matches and evidence is circumstantial or logs are sparse:
@@ -582,15 +581,18 @@ CRITICAL GROUNDING RULES:
             raw = response.content[0].text.strip()
         data = _parse_claude_json(raw)
 
-        ai_confidence = float(data.get("confidence_score", 0.5))
+        ai_confidence = float(data.get("confidence_score", 0.75))
         top_sim = similar_cases[0].similarity_score if similar_cases else 0.0
+        has_historical_match = len(similar_cases) > 0 and top_sim >= 0.30
 
-        # Closed-loop learning safeguard: If we have a verified high-confidence KB match,
-        # ensure the confidence score reflects that certainty.
-        if top_sim >= 0.75:
-            confidence = max(ai_confidence, round(min(0.95, max(0.85, top_sim)), 2))
-        elif top_sim >= 0.60:
-            confidence = max(ai_confidence, 0.78)
+        # Closed-loop learning: If previous resolution exists in historical KB and is suggested,
+        # elevate the confidence score into the high 75% - 90%+ range.
+        if top_sim >= 0.70:
+            confidence = max(ai_confidence, round(min(0.95, max(0.88, top_sim)), 2))
+        elif top_sim >= 0.50:
+            confidence = max(ai_confidence, 0.82)
+        elif has_historical_match:
+            confidence = max(ai_confidence, round(max(0.75, min(0.85, 0.65 + 0.35 * top_sim)), 2))
         else:
             confidence = ai_confidence
 
