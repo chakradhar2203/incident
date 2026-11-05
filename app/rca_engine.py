@@ -497,10 +497,14 @@ CRITICAL GROUNDING RULES:
 """
 
         if api_key.startswith("AIza") or "gemma" in (model or "").lower() or "gemini" in (model or "").lower():
-            # Call Google AI Studio API (Gemma 4 / Gemini)
-            google_model = model or "gemma-4-26b-a4b-it"
+            # Call Google AI Studio API (Gemini / Gemma)
+            google_model = model or "gemini-3.5-flash"
             if google_model.startswith("models/"):
                 google_model = google_model.replace("models/", "")
+            # gemma-4 preview does not support responseMimeType: application/json and returns 500;
+            # route to gemini-3.5-flash for reliable structured JSON RCA generation
+            if "gemma" in google_model.lower():
+                google_model = "gemini-3.5-flash"
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{google_model}:generateContent?key={api_key}"
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
